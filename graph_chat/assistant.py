@@ -1,3 +1,5 @@
+from graph_chat.base_data_model import ToFlightBookingAssistant, ToBookCarRental, ToHotelBookingAssistant, \
+    ToBookExcursion
 from graph_chat.llm_tavily import llm
 from datetime import datetime
 from langchain_core.prompts import ChatPromptTemplate
@@ -9,10 +11,11 @@ from tools.flights_tools import fetch_user_flight_information, search_flights, u
 from tools.hotels_tools import search_hotels, book_hotel, update_hotel, cancel_hotel
 from tools.retriever_vector import lookup_policy
 from tools.trip_tools import search_trip_recommendations, book_excursion, update_excursion, cancel_excursion
-
+# 助手节点类
 class CtripAssistant:
     # 自定义一个类，表示流程图的一个结点（复杂的） （函数也可以作为一个结点，类可以处理复杂内容）
     # 类不能直接作为节点，还需要创建对象
+    # 统一节点接口：让 Runnable 适配 LangGraph 的节点规范
     def __init__(self,runnable:Runnable):
         """
         初始化助手的实例
@@ -20,7 +23,7 @@ class CtripAssistant:
         """
 
         self.runnable = runnable
-    # 它让类的实例可以像函数一样被调用。
+    # 它让类的实例可以像函数一样被调用。 必须重写
     def __call__(self, state:State,config:RunnableConfig):
         """
         调用节点，执行助手任务
@@ -74,7 +77,7 @@ class CtripAssistant:
                 # 对象包含：
                 # tool_calls：模型决定要调用的工具列表
                 # content：模型的文本回复内容
-        return {'messages': result}
+        return {'messages': result} # 结点的返回必须是字典格式，里面内容必须得是 state中的字段 在定义state的时候会设置合并逻辑
 
 # 主助理提示模板
 primary_assistant_prompt = ChatPromptTemplate.from_messages(
@@ -122,59 +125,82 @@ primary_assistant_prompt = ChatPromptTemplate.from_messages(
 #     cancel_excursion,  # 取消旅行项目
 # ]
 
-# 定义“只读”工具列表，这些工具不需要用户确认即可使用
-safe_tools = [
-    # 航班相关 - 只读
-    fetch_user_flight_information,  # 查询用户航班信息
-    search_flights,  # 搜索航班
+# # 定义“只读”工具列表，这些工具不需要用户确认即可使用
+# safe_tools = [
+#     # 航班相关 - 只读
+#     fetch_user_flight_information,  # 查询用户航班信息
+#     search_flights,  # 搜索航班
+#
+#     # 租车相关 - 只读
+#     search_car_rentals,  # 搜索租车服务
+#
+#     # 酒店相关 - 只读
+#     search_hotels,  # 搜索酒店
+#
+#     # 旅行推荐相关 - 只读
+#     search_trip_recommendations,  # 搜索旅行推荐
+#
+#     # 政策查询 - 只读
+#     lookup_policy,  # 查找公司政策
+# ]
+# sensitive_tools = [ # 都是对象，而不是名字
+#     # 航班相关 - 写操作
+#     update_ticket_to_new_flight,  # 更新机票到新航班
+#     cancel_ticket,  # 取消机票
+#
+#     # 租车相关 - 写操作
+#     book_car_rental,  # 预订租车
+#     update_car_rental,  # 更新租车订单
+#     cancel_car_rental,  # 取消租车
+#
+#     # 酒店相关 - 写操作
+#     book_hotel,  # 预订酒店
+#     update_hotel,  # 更新酒店预订
+#     cancel_hotel,  # 取消酒店预订
+#
+#     # 旅行推荐相关 - 写操作
+#     book_excursion,  # 预订旅行项目
+#     update_excursion,  # 更新旅行项目
+#     cancel_excursion,  # 取消旅行项目
+# ]
+#
+# sensitive_tools_names = {tool.name for tool in sensitive_tools}
+#
+#
+# # 创建可运行对象，绑定主助理提示模板和工具集，包括委派给专门助理的工具
+# assistant_runnable = primary_assistant_prompt | llm.bind_tools(
+#     safe_tools + sensitive_tools
+# )
 
-    # 租车相关 - 只读
-    search_car_rentals,  # 搜索租车服务
 
-    # 酒店相关 - 只读
-    search_hotels,  # 搜索酒店
 
-    # 旅行推荐相关 - 只读
-    search_trip_recommendations,  # 搜索旅行推荐
 
-    # 政策查询 - 只读
-    lookup_policy,  # 查找公司政策
+# 定义主助理使用的工具
+primary_assistant_tools = [
+    # tavily_tool,  # 假设TavilySearchResults是一个有效的搜索工具 检索工具 暂时没做
+    search_flights,  # 搜索航班的工具
+    lookup_policy,  # 查找公司政策的工具
 ]
-sensitive_tools = [ # 都是对象，而不是名字
-    # 航班相关 - 写操作
-    update_ticket_to_new_flight,  # 更新机票到新航班
-    cancel_ticket,  # 取消机票
-
-    # 租车相关 - 写操作
-    book_car_rental,  # 预订租车
-    update_car_rental,  # 更新租车订单
-    cancel_car_rental,  # 取消租车
-
-    # 酒店相关 - 写操作
-    book_hotel,  # 预订酒店
-    update_hotel,  # 更新酒店预订
-    cancel_hotel,  # 取消酒店预订
-
-    # 旅行推荐相关 - 写操作
-    book_excursion,  # 预订旅行项目
-    update_excursion,  # 更新旅行项目
-    cancel_excursion,  # 取消旅行项目
-]
-
-sensitive_tools_names = {tool.name for tool in sensitive_tools}
-
 
 # 创建可运行对象，绑定主助理提示模板和工具集，包括委派给专门助理的工具
 assistant_runnable = primary_assistant_prompt | llm.bind_tools(
-    safe_tools + sensitive_tools
-)
-
-def create_assistant_node()->CtripAssistant:
-    """
-    创建一个助手，并返回一个可运行对象。
-    :param
-    :return: 可运行对象
-    """
-
-
-    return CtripAssistant(assistant_runnable)
+    primary_assistant_tools
+    + [
+        ToFlightBookingAssistant,  # 用于转交航班更新或取消的任务 在 base_data_model中定义的数据模型类
+        ToBookCarRental,  # 用于转交租车预订的任务
+        ToHotelBookingAssistant,  # 用于转交酒店预订的任务
+        ToBookExcursion,  # 用于转交旅行推荐和其他游览预订的任务
+    ]
+)#  Pydantic BaseModel 会被自动转换为"虚拟工具"  在数据模型类中定义的 Field中的内容 会被当做当前工具的描述
+"""
+┌─────────────────────────────────────────────────┐
+│ LLM 接收到的工具列表：                             │
+│                                                 │
+│ 1. search_flights (真实工具)                     │
+│ 2. lookup_policy (真实工具)                      │
+│ 3. ToFlightBookingAssistant (虚拟工具/模型类)     │
+│ 4. ToBookCarRental (虚拟工具/模型类) ⭐           │
+│ 5. ToHotelBookingAssistant (虚拟工具/模型类)      │
+│ 6. ToBookExcursion (虚拟工具/模型类)              │
+└─────────────────────────────────────────────────┘
+"""
